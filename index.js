@@ -66,9 +66,9 @@ app.post('/api/users', async (req, res) => {
 app.get('/api/users', async (req,res)=>{
 
   try {
-    const allUsers = await User.find({}, 'username _id');
+    const allUsers = await User.find({}, 'username _id').lean();
     
-    res.json(allUsers);
+    return res.json(allUsers);
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: 'Server error' });
@@ -76,103 +76,103 @@ app.get('/api/users', async (req,res)=>{
 });
 
 
-app.post('/api/users/:_id/exercises', async (req,res)=>{
+app.post('/api/users/:_id/exercises', async (req, res) => {
+  try {
+    const { _id } = req.params
+    const { description, duration } = req.body
+    let { date } = req.body
 
-  try{
-    const description = req.body.description
-    const duration = req.body.duration
-    const date = req.body?.date
-    const { _id } = req.params;;
-
-    if (!date){
-      const date = new Date()
-    }
     const user = await User.findById(_id)
+    if (!user) return res.json({ error: "Couldn't find user" })
 
-    if (!user){
-      return res.json({error:"Couldn't find user"})
+    if (!description || !duration) {
+      return res.status(400).json({ error: 'description and duration are required' })
+    }
+
+    const durNumber = Number(duration)
+    if (Number.isNaN(durNumber)) {
+      return res.status(400).json({ error: 'duration must be a number' })
+    }
+    let exerciseDate
+    if (!date) {
+      exerciseDate = new Date()
+    } else {
+      const parsed = new Date(date)
+      exerciseDate = isNaN(parsed.getTime()) ? new Date() : parsed
     }
 
     const exercise = new Exercise({
-      user_id: user._id,
-      description,
-      duration: Number(duration),
-      date: date ? new Date(date) : new Date()
-
-
+      user_id: user._id.toString(),
+      description: description.toString(),
+      duration: durNumber,
+      date: exerciseDate
     })
-    const savedExercise = await exercise.save()
 
-    if (!savedExercise){
-      return res.status(500).json({ error: 'Error saving exercise ' });
+    const saved = await exercise.save()
 
-    }
-
-
-    res.json({
+    return res.json({
+      _id: user._id,
       username: user.username,
-      description: savedExercise.description,
-      duration: savedExercise.duration,
-      date: savedExercise.date.toDateString(),
-      _id: user._id
-
-    });
-
+      date: saved.date.toDateString(),
+      duration: saved.duration,
+      description: saved.description
+    })
+  } catch (err) {
+    console.error(err)
+    return res.status(500).json({ error: 'Server error' })
   }
-  catch(err){
-    console.log(err)
-    res.status(500).json({ error: 'Server error' });
-  }
-
 })
 
 
-app.get('/api/users/:id/logs', async (req, res) => {
+
+app.get('/api/users/:_id/logs', async (req, res) => {
   try {
-    const { id } = req.params;
-    const { from, to, limit } = req.query;
+    const { _id } = req.params
+    const { from, to, limit } = req.query
 
-    const user = await User.findById(id);
-    if (!user) return res.json({ error: "Couldn't find user" });
+    const user = await User.findById(_id)
+    if (!user) return res.json({ error: "Couldn't find user" })
 
-    const query = { user_id: id };
-    const dateFilter = {};
+    const query = { user_id: _id }
+    const dateFilter = {}
 
     if (from) {
-      const fromDate = new Date(from);
-      if (!isNaN(fromDate.getTime())) dateFilter.$gte = fromDate;
+      const d = new Date(from)
+      if (!isNaN(d.getTime())) dateFilter.$gte = d
     }
     if (to) {
-      const toDate = new Date(to);
-      if (!isNaN(toDate.getTime())) dateFilter.$lte = toDate;
+      const d = new Date(to)
+      if (!isNaN(d.getTime())) dateFilter.$lte = d
     }
-    if (Object.keys(dateFilter).length) query.date = dateFilter;
+    if (Object.keys(dateFilter).length) {
+      query.date = dateFilter
+    }
 
-    const lim = Number.isInteger(parseInt(limit, 10)) && parseInt(limit, 10) > 0
-      ? parseInt(limit, 10)
-      : 0;
+    let mquery = Exercise.find(query).sort({ date: 1 })
+    const lim = parseInt(limit, 10)
+    if (!Number.isNaN(lim) && lim > 0) {
+      mquery = mquery.limit(lim)
+    }
 
-    const exercises = await Exercise.find(query)
-      .sort({ date: 1 })
-      .limit(lim);
+    const exercises = await mquery.lean()
 
     const log = exercises.map(e => ({
       description: e.description,
       duration: e.duration,
-      date: e.date ? e.date.toDateString() : new Date().toDateString(),
-    }));
+      date: new Date(e.date).toDateString()
+    }))
 
-    res.json({
+    return res.json({
       _id: user._id,
       username: user.username,
       count: log.length,
-      log,
-    });
+      log
+    })
   } catch (err) {
-    console.error(err);
-    res.status(500).json({ error: 'Server error' });
+    console.error(err)
+    return res.status(500).json({ error: 'Server error' })
   }
-});
+})
 
 
 
