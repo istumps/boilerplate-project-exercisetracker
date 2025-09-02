@@ -11,10 +11,7 @@ app.use(express.static('public'))
 const mongoose = require('mongoose')
 const { Schema } = mongoose
 
-mongoose.connect(process.env.DB_URL, {
-  useNewUrlParser: true,
-  useUnifiedTopology: true
-})
+mongoose.connect(process.env.MONGODB_URI)
 
 const UserSchema = new Schema({
   username: { type: String, required: true }
